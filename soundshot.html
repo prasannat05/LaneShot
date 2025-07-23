@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SoundShot: Lane Defender 3.1</title>
+<style>
+:root {
+  --btnW: 90px;
+  --laneCount: 20;
+  --baseEnemySpeed: 2;
+}
+body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; }
+#uiLeft {
+  position: absolute; left: 0; top: 0; width: var(--btnW); height: 100vh;
+  display: flex; flex-direction: column;
+}
+.laneBtn {
+  flex: 1; border: 1px solid #444; display: flex; align-items: center; justify-content: center;
+  font-size: clamp(12px, 2.2vh, 24px); background: #111; color: #fff; cursor: pointer; user-select: none;
+  transition: background .15s;
+}
+.laneBtn:hover { background: #333; }
+.laneBtn.active { background: #00bfff; color: #000; }
+#score, #combo, #highscore, #pauseBtn {
+  position: absolute; right: 10px; font-size: 18px; z-index: 3; text-align: right;
+}
+#score { top: 10px; }
+#combo { top: 40px; color: #0f0; }
+#highscore { top: 70px; color: gold; }
+#pauseBtn {
+  top: 100px; background: #222; color: #fff; border: 1px solid #555; padding: 4px 10px; cursor: pointer;
+}
+#gameOver {
+  position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center;
+  align-items: center; background: rgba(0,0,0,.9); font-size: 26px; gap: 22px; z-index: 5; display: none;
+}
+#gameOver button { padding: 12px 30px; font-size: 20px; cursor: pointer; }
+canvas { position: absolute; left: var(--btnW); top: 0; }
+</style>
+</head>
+<body>
+<div id="uiLeft"></div>
+<div id="score">Score 0</div>
+<div id="combo" style="opacity:0">Combo ×1</div>
+<div id="highscore">High Score: 0</div>
+<button id="pauseBtn" onclick="togglePause()">⏸ Pause</button>
+<div id="gameOver">
+  <div id="overText"></div>
+  <button onclick="location.reload()">Restart</button>
+</div>
+<canvas id="gameCanvas"></canvas>
+<script>
+const lanes = 20;
+const uiLeft = document.getElementById('uiLeft');
+const allBtns = [];
+for (let i = 1; i <= lanes; i++) {
+  const d = document.createElement('div');
+  d.className = 'laneBtn'; d.textContent = i; d.dataset.lane = i;
+  d.onclick = () => fireBullet(+d.dataset.lane);
+  uiLeft.appendChild(d); allBtns.push(d);
+}
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let laneH = 0;
+function resize() {
+  canvas.width = window.innerWidth - 90;
+  canvas.height = window.innerHeight;
+  laneH = canvas.height / lanes;
+}
+window.onresize = resize; resize();
+let bullets = [], enemies = [], score = 0, combo = 1, lastHitTime = 0, bestCombo = 1, highScore = +localStorage.getItem('highScore') || 0;
+let speedMult = 1, startTime = performance.now(), gameActive = true, paused = false;
+document.getElementById('highscore').innerText = `High Score: ${highScore}`;
+setInterval(() => speedMult = 1 + (performance.now() - startTime) / 30000, 5000);
+function spawnEnemy() {
+  if (!gameActive || paused) return;
+  const lane = Math.floor(Math.random() * lanes) + 1;
+  const roll = Math.random();
+  let size, hp, value;
+  if (roll < 0.6) { size = 30; hp = 1; value = 10; }
+  else if (roll < 0.9) { size = 45; hp = 2; value = 20; }
+  else { size = 60; hp = 3; value = 30; }
+  enemies.push({ lane, hp, value, size, x: canvas.width + size, y: laneH * (lane - 0.5), speed: 2 + Math.random() * 1.5 });
+}
+setInterval(spawnEnemy, 900);
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recog = new SR();
+  recog.continuous = true; recog.lang = 'en-US'; recog.interimResults = false;
+  recog.onresult = e => {
+    const txt = e.results[e.results.length - 1][0].transcript.toLowerCase();
+    const n = parseInt(txt.match(/\d+/));
+    if (n >= 1 && n <= lanes) fireBullet(n);
+  };
+  recog.onerror = () => {};
+  recog.start();
+}
+function fireBullet(lane) {
+  if (!gameActive || paused) return;
+  highlightLane(lane);
+  bullets.push({ lane, x: 0, y: laneH * (lane - 0.5), r: 10, speed: 12 });
+}
+function highlightLane(lane) {
+  const btn = allBtns[lane - 1];
+  btn.classList.add('active');
+  setTimeout(() => btn.classList.remove('active'), 150);
+}
+function loop() {
+  if (!gameActive || paused) return requestAnimationFrame(loop);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < lanes; i++) {
+    ctx.fillStyle = i % 2 === 0 ? '#111' : '#222';
+    ctx.fillRect(0, i * laneH, canvas.width, laneH);
+    ctx.fillStyle = '#555';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(i + 1, 10, i * laneH + 16);
+  }
+  if (enemies.length) {
+    let eLane = enemies[0].lane;
+    ctx.fillStyle = 'rgba(255,255,100,0.15)';
+    ctx.fillRect(0, laneH * (eLane - 1), canvas.width, laneH);
+  }
+  bullets.forEach(b => b.x += b.speed);
+  bullets = bullets.filter(b => b.x < canvas.width + 50);
+  enemies.forEach(e => e.x -= e.speed * speedMult);
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    if (e.x - e.size / 2 < 0) return endGame();
+    for (let j = 0; j < bullets.length; j++) {
+      const b = bullets[j];
+      if (b.lane === e.lane && Math.abs(b.x - e.x) < b.r + e.size / 2) {
+        bullets.splice(j, 1);
+        e.hp--;
+        if (e.hp <= 0) {
+          score += e.value * combo;
+          enemies.splice(i, 1);
+          handleCombo();
+        }
+        break;
+      }
+    }
+  }
+  enemies.forEach(e => {
+    ctx.fillStyle = `rgb(255,${e.hp === 1 ? 70 : e.hp === 2 ? 140 : 200},${e.hp === 3 ? 70 : 70})`;
+    ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
+  });
+  ctx.fillStyle = '#0ff';
+  bullets.forEach(b => {
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+  });
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+function handleCombo() {
+  const now = performance.now();
+  if (now - lastHitTime < 2000) { combo++; bestCombo = Math.max(bestCombo, combo); }
+  else combo = 1;
+  lastHitTime = now;
+  document.getElementById('combo').textContent = `Combo ×${combo}`;
+  document.getElementById('combo').style.opacity = combo > 1 ? 1 : 0;
+  document.getElementById('score').textContent = `Score ${score}`;
+}
+function endGame() {
+  gameActive = false;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('highScore', highScore);
+  }
+  document.getElementById('overText').innerHTML = `Game Over<br>Score ${score}<br>Best Combo ×${bestCombo}<br>High Score ${highScore}`;
+  document.getElementById('gameOver').style.display = 'flex';
+}
+function togglePause() {
+  if (!gameActive) return;
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? '▶ Resume' : '⏸ Pause';
+  if (!paused) requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
