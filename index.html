@@ -7,8 +7,7 @@
   <style>
     :root {
       --btnW: 90px;
-      --laneCount: 20;
-      --baseEnemySpeed: 2;
+      --laneCount: 10;
     }
     body {
       margin: 0;
@@ -94,7 +93,6 @@
       left: var(--btnW);
       top: 0;
     }
-
     @media (max-width: 768px) {
       :root { --btnW: 60px; }
       .laneBtn { font-size: clamp(10px, 2vh, 20px); }
@@ -116,66 +114,45 @@
   <canvas id="gameCanvas"></canvas>
 
   <script>
-    const lanes = 20;
-    const uiLeft = document.getElementById('uiLeft');
-    const allBtns = [];
-    for (let i = 1; i <= lanes; i++) {
-      const d = document.createElement('div');
-      d.className = 'laneBtn'; d.textContent = i; d.dataset.lane = i;
-      d.onclick = () => fireBullet(+d.dataset.lane);
-      uiLeft.appendChild(d); allBtns.push(d);
-    }
-
+    const laneCount = 10;
+    const allBtns = [], bullets = [], enemies = [];
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    let laneH = 0;
-    function resize() {
+    const uiLeft = document.getElementById('uiLeft');
+
+    let score = 0, combo = 1, bestCombo = 1, lastHitTime = 0;
+    let laneH = 0, speedMult = 1, gameActive = true, paused = false;
+    let startTime = performance.now();
+    let highScore = +localStorage.getItem('highScore') || 0;
+
+    document.getElementById('highscore').textContent = `High Score: ${highScore}`;
+
+    for (let i = 0; i < laneCount; i++) {
+      const btn = document.createElement('div');
+      btn.className = 'laneBtn';
+      btn.textContent = i;
+      btn.dataset.lane = i + 1;
+      btn.onclick = () => fireBullet(i + 1);
+      uiLeft.appendChild(btn);
+      allBtns.push(btn);
+    }
+
+    function resizeCanvas() {
       const panelVisible = uiLeft.style.display !== 'none';
       const leftW = panelVisible ? parseInt(getComputedStyle(document.documentElement).getPropertyValue('--btnW')) : 0;
-      canvas.style.left = panelVisible ? `var(--btnW)` : '0px';
       canvas.width = window.innerWidth - leftW;
       canvas.height = window.innerHeight;
-      laneH = canvas.height / lanes;
+      canvas.style.left = panelVisible ? `var(--btnW)` : '0px';
+      laneH = canvas.height / laneCount;
     }
-    window.onresize = resize; resize();
 
-    let bullets = [], enemies = [], score = 0, combo = 1, lastHitTime = 0, bestCombo = 1;
-    let highScore = +localStorage.getItem('highScore') || 0;
-    let speedMult = 1, startTime = performance.now(), gameActive = true, paused = false;
-    document.getElementById('highscore').innerText = `High Score: ${highScore}`;
-    setInterval(() => speedMult = 1 + (performance.now() - startTime) / 30000, 5000);
-
-    function spawnEnemy() {
-      if (!gameActive || paused) return;
-      const lane = Math.floor(Math.random() * lanes) + 1;
-      const roll = Math.random();
-      let size, hp, value;
-      if (roll < 0.6) { size = 30; hp = 1; value = 10; }
-      else if (roll < 0.9) { size = 45; hp = 2; value = 20; }
-      else { size = 60; hp = 3; value = 30; }
-      enemies.push({ lane, hp, value, size, x: canvas.width + size, y: laneH * (lane - 0.5), speed: 2 + Math.random() * 1.5 });
-    }
-    setInterval(spawnEnemy, 900);
-
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recog = new SR();
-      recog.continuous = true;
-      recog.lang = 'en-US';
-      recog.interimResults = false;
-      recog.onresult = e => {
-        const txt = e.results[e.results.length - 1][0].transcript.toLowerCase();
-        const n = parseInt(txt.match(/\d+/));
-        if (n >= 1 && n <= lanes) fireBullet(n);
-      };
-      recog.onerror = () => {};
-      recog.start();
-    }
+    window.onresize = resizeCanvas;
+    resizeCanvas();
 
     function fireBullet(lane) {
       if (!gameActive || paused) return;
       highlightLane(lane);
-      bullets.push({ lane, x: 0, y: laneH * (lane - 0.5), r: 10, speed: 12 });
+      bullets.push({ lane, x: 0, y: laneH * (lane - 0.5), r: 10, speed: 14 });
     }
 
     function highlightLane(lane) {
@@ -184,27 +161,59 @@
       setTimeout(() => btn.classList.remove('active'), 150);
     }
 
-    function loop() {
-      if (!gameActive || paused) return requestAnimationFrame(loop);
+    function spawnEnemy() {
+      if (!gameActive || paused) return;
+      const lane = Math.floor(Math.random() * laneCount) + 1;
+      const roll = Math.random();
+      let size = 30, hp = 1, value = 10;
+      if (roll > 0.6 && roll <= 0.9) { size = 45; hp = 2; value = 20; }
+      else if (roll > 0.9) { size = 60; hp = 3; value = 30; }
+      enemies.push({ lane, hp, value, size, x: canvas.width + size, y: laneH * (lane - 0.5), speed: 2 + Math.random() * 1.5 });
+    }
+
+    setInterval(spawnEnemy, 800);
+    setInterval(() => speedMult = 1 + (performance.now() - startTime) / 30000, 5000);
+
+    function handleCombo() {
+      const now = performance.now();
+      if (now - lastHitTime < 2000) combo++;
+      else combo = 1;
+      bestCombo = Math.max(bestCombo, combo);
+      lastHitTime = now;
+      document.getElementById('combo').textContent = `Combo ×${combo}`;
+      document.getElementById('combo').style.opacity = combo > 1 ? 1 : 0;
+      document.getElementById('score').textContent = `Score ${score}`;
+    }
+
+    function endGame() {
+      gameActive = false;
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('highScore', highScore);
+      }
+      document.getElementById('overText').innerHTML = `Game Over<br>Score ${score}<br>Best Combo ×${bestCombo}<br>High Score ${highScore}`;
+      document.getElementById('gameOver').style.display = 'flex';
+    }
+
+    function drawGame() {
+      if (!gameActive || paused) return requestAnimationFrame(drawGame);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // draw background lanes
-      for (let i = 0; i < lanes; i++) {
+      for (let i = 0; i < laneCount; i++) {
         ctx.fillStyle = i % 2 === 0 ? '#111' : '#222';
         ctx.fillRect(0, i * laneH, canvas.width, laneH);
         ctx.fillStyle = '#555';
         ctx.font = '14px sans-serif';
-        ctx.fillText(i + 1, 10, i * laneH + 16);
+        ctx.fillText(i, 10, i * laneH + 16);
       }
 
-      if (enemies.length) {
-        const eLane = enemies[0].lane;
+      if (enemies.length > 0) {
         ctx.fillStyle = 'rgba(255,255,100,0.15)';
-        ctx.fillRect(0, laneH * (eLane - 1), canvas.width, laneH);
+        ctx.fillRect(0, laneH * (enemies[0].lane - 1), canvas.width, laneH);
       }
 
       bullets.forEach(b => b.x += b.speed);
-      bullets = bullets.filter(b => b.x < canvas.width + 50);
+      bullets.filter(b => b.x < canvas.width + 100);
 
       enemies.forEach(e => e.x -= e.speed * speedMult);
 
@@ -238,53 +247,56 @@
         ctx.fill();
       });
 
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-
-    function handleCombo() {
-      const now = performance.now();
-      if (now - lastHitTime < 2000) { combo++; bestCombo = Math.max(bestCombo, combo); }
-      else combo = 1;
-      lastHitTime = now;
-      document.getElementById('combo').textContent = `Combo ×${combo}`;
-      document.getElementById('combo').style.opacity = combo > 1 ? 1 : 0;
-      document.getElementById('score').textContent = `Score ${score}`;
+      requestAnimationFrame(drawGame);
     }
 
-    function endGame() {
-      gameActive = false;
-      if (score > highScore) {
-        highScore = score;
-        localStorage.setItem('highScore', highScore);
-      }
-      document.getElementById('overText').innerHTML = `Game Over<br>Score ${score}<br>Best Combo ×${bestCombo}<br>High Score ${highScore}`;
-      document.getElementById('gameOver').style.display = 'flex';
-    }
+    requestAnimationFrame(drawGame);
 
     function togglePause() {
       if (!gameActive) return;
       paused = !paused;
       document.getElementById('pauseBtn').textContent = paused ? '▶ Resume' : '⏸ Pause';
-      if (!paused) requestAnimationFrame(loop);
+      if (!paused) requestAnimationFrame(drawGame);
     }
+
     function toggleLanePanel() {
       const panel = document.getElementById('uiLeft');
       const toggleBtn = document.getElementById('togglePanel');
-      if (panel.style.display === 'none') {
-        panel.style.display = 'flex';
-        toggleBtn.textContent = '👆 Hide Panel';
-      } else {
-        panel.style.display = 'none';
-        toggleBtn.textContent = '👇 Show Panel';
-      }
-      resize();
+      panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+      toggleBtn.textContent = panel.style.display === 'none' ? '👇 Show Panel' : '👆 Hide Panel';
+      resizeCanvas();
     }
 
-    
-    
+    // ✅ Keyboard support with continuous firing
+    const keyIntervals = {};
+    window.addEventListener('keydown', e => {
+      if (!/^\d$/.test(e.key)) return;
+      const n = +e.key;
+      if (keyIntervals[n]) return;
+      fireBullet(n + 1);
+      keyIntervals[n] = setInterval(() => fireBullet(n + 1), 200);
+    });
+    window.addEventListener('keyup', e => {
+      const n = +e.key;
+      clearInterval(keyIntervals[n]);
+      delete keyIntervals[n];
+    });
+
+    // ✅ Voice input (optional)
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recog = new SR();
+      recog.continuous = true;
+      recog.lang = 'en-US';
+      recog.interimResults = false;
+      recog.onresult = e => {
+        const txt = e.results[e.results.length - 1][0].transcript.toLowerCase();
+        const n = parseInt(txt.match(/\d/));
+        if (n >= 0 && n <= 9) fireBullet(n + 1);
+      };
+      recog.onerror = () => {};
+      recog.start();
+    }
   </script>
 </body>
 </html>
-
-
