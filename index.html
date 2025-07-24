@@ -17,6 +17,32 @@
       overflow: hidden;
       touch-action: none;
     }
+
+    /* 👇 NEW: How to Play styles */
+    .howToPlay {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 18px;
+      color: #0ff;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px 20px;
+      border-radius: 12px;
+      z-index: 10;
+      text-align: center;
+      line-height: 1.6;
+      font-family: 'Poppins', sans-serif;
+      animation: fadeOut 1s ease-out 5s forwards;
+    }
+
+    @keyframes fadeOut {
+      to {
+        opacity: 0;
+        visibility: hidden;
+      }
+    }
+
     #uiLeft {
       position: absolute;
       left: 0;
@@ -101,6 +127,15 @@
   </style>
 </head>
 <body>
+
+  <!-- 👇 NEW: How to Play Message -->
+  <h3 class="howToPlay">
+    🎮 How to Play:<br>
+    • Click Lane Buttons<br>
+    • Press Keys (0–9)<br>
+    • Say Numbers Out Loud 🎙️
+  </h3>
+
   <div id="uiLeft"></div>
   <div id="score">Score 0</div>
   <div id="combo" style="opacity:0">Combo ×1</div>
@@ -267,7 +302,6 @@
       resizeCanvas();
     }
 
-    // ✅ Keyboard support with continuous firing
     const keyIntervals = {};
     window.addEventListener('keydown', e => {
       if (!/^\d$/.test(e.key)) return;
@@ -282,7 +316,6 @@
       delete keyIntervals[n];
     });
 
-    // ✅ Voice input (optional)
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recog = new SR();
